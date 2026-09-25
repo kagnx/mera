@@ -1,0 +1,1072 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Türkiye Mera Haritası</title>
+
+    <!--
+      Türkiye il sınırları GeoJSON verisi: alpers/Turkey-Maps-GeoJSON (Apache License 2.0)
+      https://github.com/alpers/Turkey-Maps-GeoJSON
+    -->
+    <!-- Leaflet 1.9.4 (yerel paketli - çevrimdışı çalışır) -->
+    <link rel="stylesheet" href="leaflet.css" />
+    <script src="leaflet.js"></script>
+
+    <!-- QWebChannel: yerel dosya, yoksa Qt'nin gömülü kaynağı -->
+    <script src="qwebchannel.js"></script>
+    <script src="qrc:///qtwebchannel/qwebchannel.js"></script>
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body, #map { width: 100%; height: 100%; font-family: 'Segoe UI', Arial, sans-serif; background-color: #EDF4EA; overflow: hidden; }
+
+        /* ---- Göz konforu: harita karolarını yumuşat (daha az parlaklık/doygunluk) ---- */
+        .leaflet-tile-pane {
+            filter: saturate(0.74) brightness(1.04) contrast(0.95);
+        }
+
+        /* ---- Kompakt harita menüsü (sağ üstte tek buton + açılır panel) ---- */
+        .map-menu-wrap {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            z-index: 1000;
+        }
+
+        /* ---- Karanlık mod (body.dark: karo filtresi + koyu arayüz) ---- */
+        body.dark .leaflet-tile-pane {
+            filter: invert(0.92) hue-rotate(185deg) brightness(0.92) contrast(0.92) saturate(0.6);
+        }
+
+        body.dark .map-menu-btn {
+            background: rgba(24, 31, 27, 0.97);
+            color: #E8F0EA;
+            border-color: #3A5245;
+        }
+
+        body.dark .map-menu-btn:hover { border-color: #567D64; }
+
+        body.dark .map-menu-panel {
+            background: rgba(24, 31, 27, 0.98);
+            border-color: #3A5245;
+            box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+        }
+
+        body.dark .menu-section-title { color: #9FB8A6; }
+
+        body.dark .menu-item { color: #E8F0EA; }
+
+        body.dark .menu-item:hover { background: #233529; }
+
+        body.dark .menu-item.active { background: #233529; color: #A5D6A7; }
+
+        body.dark .menu-sep { background: #2C4033; }
+
+        body.dark .menu-badge { background: #A5D6A7; color: #14261A; }
+
+        .map-menu-btn {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: rgba(250, 252, 249, 0.97);
+            color: #22332A;
+            border: 1px solid #CBDEC6;
+            padding: 7px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        }
+
+        .map-menu-btn:hover { border-color: #A9C9A4; }
+
+        .map-menu-btn .caret { font-size: 10px; color: #5C7164; }
+
+        .menu-badge {
+            background: #3F7D4E;
+            color: #FFFFFF;
+            border-radius: 9px;
+            font-size: 10.5px;
+            font-weight: 700;
+            padding: 0 6px;
+            line-height: 16px;
+        }
+
+        .map-menu-panel {
+            display: none;
+            position: absolute;
+            top: 42px;
+            right: 0;
+            min-width: 236px;
+            background: rgba(250, 252, 249, 0.98);
+            border: 1px solid #CBDEC6;
+            border-radius: 10px;
+            box-shadow: 0 8px 28px rgba(15, 35, 25, 0.18);
+            padding: 6px;
+        }
+
+        .map-menu-wrap.open .map-menu-panel { display: block; }
+
+        .menu-section-title {
+            font-size: 10.5px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: #5C7164;
+            padding: 7px 10px 3px;
+            font-weight: 700;
+        }
+
+        .menu-item {
+            display: flex;
+            align-items: center;
+            gap: 9px;
+            width: 100%;
+            background: transparent;
+            border: none;
+            text-align: left;
+            padding: 8px 10px;
+            border-radius: 7px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            color: #22332A;
+            font-family: inherit;
+        }
+
+        .menu-item:hover { background: #E8F3E8; }
+
+        .menu-item .mi-check {
+            margin-left: auto;
+            color: #3F7D4E;
+            font-weight: 800;
+            visibility: hidden;
+        }
+
+        .menu-item.active { background: #E8F3E8; color: #3F7D4E; }
+        .menu-item.active .mi-check { visibility: visible; }
+
+        .menu-sep { height: 1px; background: #D9E7D5; margin: 5px 4px; }
+
+        /* ---- Yakınlaştırma düğmeleri: daha okunur ---- */
+        .leaflet-bar {
+            border: 1px solid #CBDEC6;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.12);
+        }
+
+        .leaflet-bar a {
+            color: #22332A;
+            font-size: 17px;
+            font-weight: 600;
+        }
+
+        body.dark .leaflet-bar {
+            border-color: #3A5245;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+        }
+
+        body.dark .leaflet-bar a {
+            background: #1B241F;
+            color: #E8F0EA;
+            border-color: #2C4033;
+        }
+
+        body.dark .leaflet-bar a:hover { background: #233529; }
+
+        /* ---- Attribution (sağ alt köşe) ---- */
+        body.dark .leaflet-control-attribution {
+            background: rgba(20, 27, 23, 0.85);
+            color: #A8BCAE;
+        }
+
+        body.dark .leaflet-control-attribution a { color: #A5D6A7; }
+
+        /* ---- Leaflet Popups (açık, yüksek okunurluklu tema) ---- */
+        .leaflet-popup-content-wrapper {
+            background: rgba(255, 255, 255, 0.98);
+            color: #1F2C24;
+            border: 1px solid #CBDEC6;
+            border-radius: 10px;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
+            padding: 6px;
+        }
+
+        .leaflet-popup-content {
+            margin: 10px 14px;
+            font-size: 13.5px;
+            line-height: 1.55;
+        }
+
+        .leaflet-popup-tip { background: rgba(255, 255, 255, 0.98); border: 1px solid #CBDEC6; }
+
+        body.dark .leaflet-popup-content-wrapper {
+            background: rgba(24, 31, 27, 0.98);
+            color: #E8F0EA;
+            border-color: #3A5245;
+            box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+        }
+
+        body.dark .leaflet-popup-tip { background: rgba(24, 31, 27, 0.98); border-color: #3A5245; }
+
+        .pasture-popup-title {
+            font-size: 16px;
+            font-weight: bold;
+            color: #2F6B33;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #D9E7D5;
+            padding-bottom: 5px;
+        }
+
+        body.dark .pasture-popup-title { color: #A5D6A7; border-bottom-color: #2C4033; }
+
+        .pasture-popup-badge {
+            display: inline-block;
+            background: #3F7D4E;
+            color: #FFFFFF;
+            padding: 2px 9px;
+            border-radius: 12px;
+            font-size: 11.5px;
+            font-weight: 600;
+            margin-bottom: 7px;
+        }
+
+        body.dark .pasture-popup-badge { background: #2E5938; }
+
+        .pasture-popup-detail {
+            font-size: 13px;
+            line-height: 1.6;
+            color: #1F2C24;
+        }
+
+        .pasture-popup-detail strong { color: #22332A; }
+
+        body.dark .pasture-popup-detail { color: #D7E4DA; }
+
+        body.dark .pasture-popup-detail strong { color: #E8F0EA; }
+
+        /* ---- Popup: poligon alani + son olcum blogu ---- */
+        .pasture-popup-section {
+            margin-top: 8px;
+            padding-top: 7px;
+            border-top: 1px dashed #CBDEC6;
+        }
+
+        .pasture-popup-section-title {
+            font-size: 11.5px;
+            font-weight: 700;
+            letter-spacing: 0.4px;
+            text-transform: uppercase;
+            color: #4E7A57;
+            margin-bottom: 4px;
+        }
+
+        .pasture-popup-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2px 12px;
+            font-size: 12.5px;
+        }
+
+        .pasture-popup-grid .k { color: #41523F; font-weight: 600; }
+        .pasture-popup-grid .v { color: #1F2C24; font-weight: 600; text-align: right; }
+
+        .pasture-popup-note {
+            font-size: 12px;
+            color: #6B7A6E;
+            font-style: italic;
+        }
+
+        body.dark .pasture-popup-section { border-top-color: #3A5245; }
+        body.dark .pasture-popup-section-title { color: #A5D6A7; }
+        body.dark .pasture-popup-grid .k { color: #9DB3A3; }
+        body.dark .pasture-popup-grid .v { color: #E8F0EA; }
+        body.dark .pasture-popup-note { color: #8FA396; }
+
+        .btn-inspect {
+            display: block;
+            width: 100%;
+            margin-top: 9px;
+            background: #3F7D4E;
+            color: #FFFFFF;
+            text-align: center;
+            padding: 7px 0;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 12.5px;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-inspect:hover { background: #4C9460; }
+
+        body.dark .btn-inspect { background: #2E5938; }
+
+        .btn-addmeas {
+            display: block;
+            width: 100%;
+            margin-top: 7px;
+            background: #EDF6EA;
+            color: #2F6B33;
+            text-align: center;
+            padding: 7px 0;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 12.5px;
+            cursor: pointer;
+            border: 1px solid #BFD9C2;
+        }
+
+        .btn-addmeas:hover { background: #DEEED9; }
+
+        body.dark .btn-addmeas { background: #24382B; color: #A5D6A7; border-color: #3A5245; }
+
+        /* ---- Popup: verim trendi sparkline ---- */
+        .pasture-popup-spark {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 6px;
+        }
+
+        .pasture-popup-spark svg {
+            flex: none;
+        }
+
+        .spark-arrow {
+            font-size: 15px;
+            font-weight: bold;
+            line-height: 1;
+        }
+
+        .spark-arrow.up   { color: #2F7D46; }
+        .spark-arrow.down { color: #B3541E; }
+        .spark-arrow.flat { color: #6B7A6E; }
+
+        body.dark .spark-arrow.up   { color: #A5D6A7; }
+        body.dark .spark-arrow.down { color: #E8A87C; }
+        body.dark .spark-arrow.flat { color: #8FA396; }
+
+        .spark-line { stroke: #3F7D4E; }
+        .spark-dot-last { fill: #2F6B33; }
+
+        body.dark .spark-line { stroke: #A5D6A7; }
+        body.dark .spark-dot-last { fill: #D7EEDC; }
+
+        body.dark .btn-addmeas:hover { background: #2C4634; }
+
+        body.dark .btn-inspect:hover { background: #3F7D4E; }
+
+        /* ---- Attribution (sağ alt köşe) ---- */
+        body.dark .leaflet-control-attribution {
+            background: rgba(20, 27, 23, 0.85);
+            color: #A8BCAE;
+        }
+
+        body.dark .leaflet-control-attribution a { color: #A5D6A7; }
+    </style>
+</head>
+<body>
+
+    <div class="map-menu-wrap" id="mapMenuWrap">
+        <button class="map-menu-btn" id="mapMenuBtn" onclick="toggleMapMenu(event)" title="Harita seçenekleri">
+            <span>🗺️ Harita Menüsü</span>
+            <span class="menu-badge" id="menuBadge">0</span>
+            <span class="caret" id="menuCaret">▾</span>
+        </button>
+        <div class="map-menu-panel">
+            <div class="menu-section-title" id="mstLayers">Temel Harita</div>
+            <button class="menu-item active" id="btnStreet" onclick="pickBaseLayer('street')"><span>📍 <span id="lblStreet">Standart Harita</span></span><span class="mi-check">✓</span></button>
+            <button class="menu-item" id="btnSatellite" onclick="pickBaseLayer('satellite')"><span>🌍 <span id="lblSatellite">Google Earth / Uydu</span></span><span class="mi-check">✓</span></button>
+            <button class="menu-item" id="btnHybrid" onclick="pickBaseLayer('hybrid')"><span>🗺️ <span id="lblHybrid">Karma (Uydu + Etiket)</span></span><span class="mi-check">✓</span></button>
+            <button class="menu-item" id="btnTopo" onclick="pickBaseLayer('topo')"><span>⛰️ <span id="lblTopo">Topoğrafik</span></span><span class="mi-check">✓</span></button>
+            <div class="menu-sep"></div>
+            <div class="menu-section-title" id="mstView">Görünüm</div>
+            <button class="menu-item" id="btnReset" onclick="resetView()"><span>🇹🇷 <span id="lblReset">Türkiye Tam Ekran</span></span></button>
+            <button class="menu-item" id="btnDark" onclick="toggleDarkMode()"><span>🌙 <span id="lblDark">Karanlık Mod</span></span><span class="mi-check">✓</span></button>
+            <div class="menu-sep"></div>
+            <div class="menu-section-title" id="mstOverlays">Katmanlar</div>
+            <button class="menu-item active" id="btnProvinces" onclick="toggleProvinces()"><span>🗺️ <span id="lblProvinces">İl Sınırları</span></span><span class="mi-check">✓</span></button>
+            <button class="menu-item" id="btnSettlements" onclick="toggleSettlements()"><span>🏘️ <span id="lblSettlements">Yerleşim</span></span><span class="mi-check">✓</span></button>
+            <button class="menu-item" id="btnRivers" onclick="toggleRivers()"><span>💧 <span id="lblRivers">Akarsu</span></span><span class="mi-check">✓</span></button>
+        </div>
+    </div>
+
+    <div id="map"></div>
+
+    <script>
+        var map, pyBridge;
+        var markersGroup, polygonsGroup;
+        var currentPasturesData = [];
+
+        // Arayüz dili (tr/en) — butonlar ve popup metinleri buradan çevrilir
+        var UI = {
+            tr: {
+                menuLabel: '🗺️ Harita Menüsü',
+                menuTitle: 'Harita seçenekleri',
+                mstLayers: 'Temel Harita',
+                mstView: 'Görünüm',
+                mstOverlays: 'Katmanlar',
+                lblStreet: 'Standart Harita',
+                lblSatellite: 'Google Earth / Uydu',
+                lblHybrid: 'Karma (Uydu + Etiket)',
+                lblTopo: 'Topoğrafik',
+                lblReset: 'Türkiye Tam Ekran',
+                lblDark: 'Karanlık Mod',
+                lblProvinces: 'İl Sınırları',
+                lblSettlements: 'Yerleşim',
+                lblRivers: 'Akarsu',
+                popupCode: 'Kod',
+                popupArea: 'Yüzölçümü',
+                popupElevation: 'Rakım',
+                popupCapacity: 'Otlatma Kapasitesi',
+                popupVegetation: 'Vejetasyon Örtüsü',
+                popupStatus: 'Durum',
+                popupInspect: '🔍 Detayları İncele',
+                popupAddMeas: '🌱 Ölçüm Ekle',
+                popupYieldTrend: 'Verim Trendi (son ölçümler)',
+                popupHectare: 'Hektar',
+                popupPolyArea: 'Poligon Alanı',
+                popupNoPoly: 'Poligon çizilmedi',
+                popupLastMeas: 'Son Ölçüm',
+                popupMeasDate: 'Tarih',
+                popupMeasYield: 'Kuru Ot',
+                popupMeasCover: 'Örtü',
+                popupMeasHeight: 'Ort. Boy',
+                popupMeasObserver: 'Gözlemci',
+                popupNoMeas: 'Henüz ölçüm yok',
+                popupKgHa: 'kg/ha',
+                popupCm: 'cm',
+                provincePopup: 'Türkiye İl Sınırı'
+            },
+            en: {
+                menuLabel: '🗺️ Map Menu',
+                menuTitle: 'Map options',
+                mstLayers: 'Base Map',
+                mstView: 'View',
+                mstOverlays: 'Layers',
+                lblStreet: 'Standard Map',
+                lblSatellite: 'Google Earth / Satellite',
+                lblHybrid: 'Hybrid (Satellite + Labels)',
+                lblTopo: 'Topographic',
+                lblReset: 'Turkey Full Screen',
+                lblDark: 'Dark Mode',
+                lblProvinces: 'Province Borders',
+                lblSettlements: 'Settlements',
+                lblRivers: 'Rivers',
+                popupCode: 'Code',
+                popupArea: 'Area',
+                popupElevation: 'Elevation',
+                popupCapacity: 'Grazing Capacity',
+                popupVegetation: 'Vegetation Coverage',
+                popupStatus: 'Status',
+                popupInspect: '🔍 Inspect Details',
+                popupAddMeas: '🌱 Add Measurement',
+                popupYieldTrend: 'Yield Trend (recent measurements)',
+                popupHectare: 'Hectares',
+                popupPolyArea: 'Polygon Area',
+                popupNoPoly: 'No polygon drawn',
+                popupLastMeas: 'Last Measurement',
+                popupMeasDate: 'Date',
+                popupMeasYield: 'Dry Hay',
+                popupMeasCover: 'Coverage',
+                popupMeasHeight: 'Avg. Height',
+                popupMeasObserver: 'Observer',
+                popupNoMeas: 'No measurement yet',
+                popupKgHa: 'kg/ha',
+                popupCm: 'cm',
+                provincePopup: 'Turkey Province Border'
+            }
+        };
+        var currentLang = 'tr';
+        function ui(key) {
+            var g = UI[currentLang] || UI.tr;
+            return (g[key] !== undefined) ? g[key] : (UI.tr[key] || key);
+        }
+        function setMapLanguage(lang) {
+            currentLang = (lang === 'en') ? 'en' : 'tr';
+            var ids = ['lblStreet', 'lblSatellite', 'lblHybrid', 'lblTopo',
+                       'lblReset', 'lblDark', 'lblProvinces', 'lblSettlements', 'lblRivers'];
+            ids.forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = ui(id);
+            });
+            ['mstLayers', 'mstView', 'mstOverlays'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.textContent = ui(id);
+            });
+            var btn = document.getElementById('mapMenuBtn');
+            if (btn) {
+                var lbl = btn.querySelector('span');
+                if (lbl) lbl.textContent = ui('menuLabel');
+                btn.title = ui('menuTitle');
+            }
+            // Açık popupları yeni dille yeniden oluştur
+            if (currentPasturesData && currentPasturesData.length) {
+                loadPasturesOnMap(currentPasturesData);
+            }
+        }
+
+        /* ---- Kompakt menü davranışı: seçim yapılınca kapanır, haritayı kapatmaz ---- */
+        function toggleMapMenu(ev) {
+            if (ev) ev.stopPropagation();
+            document.getElementById('mapMenuWrap').classList.toggle('open');
+        }
+
+        function closeMapMenu() {
+            var wrap = document.getElementById('mapMenuWrap');
+            if (wrap) wrap.classList.remove('open');
+        }
+
+        function pickBaseLayer(name) {
+            switchLayer(name);
+        }
+
+        /* ---- Karanlık mod: body.dark sınıfı tüm koyu temayı açar ---- */
+        function toggleDarkMode() {
+            document.body.classList.toggle('dark');
+            closeMapMenu();
+        }
+
+        function isDarkMode() {
+            return document.body.classList.contains('dark');
+        }
+
+        document.addEventListener('click', function (ev) {
+            var wrap = document.getElementById('mapMenuWrap');
+            if (wrap && wrap.classList.contains('open') && !wrap.contains(ev.target)) {
+                closeMapMenu();
+            }
+        });
+
+        document.addEventListener('keydown', function (ev) {
+            if (ev.key === 'Escape') closeMapMenu();
+        });
+
+        // Tile Layers
+        var cartoVoyager = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+            attribution: 'CartoDB Voyager | Türkiye Mera Bilgi Sistemi',
+            maxZoom: 19
+        });
+
+        var esriSatellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri World Imagery | Türkiye Mera Bilgi Sistemi',
+            maxZoom: 19
+        });
+
+        var esriLabels = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+            maxZoom: 19
+        });
+
+        var osmMap = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19
+        });
+
+        var topoMap = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+            maxZoom: 17
+        });
+
+        var hybridGroup = L.layerGroup([esriSatellite, esriLabels]);
+
+        // Mera dışı overlay katmanlar
+        var settlementLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png', {
+            attribution: 'CartoDB Labels | Türkiye Mera Bilgi Sistemi',
+            maxZoom: 19
+        });
+
+        var hydroOverlay = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Hydro_Reference_Overlay/MapServer/tile/{z}/{y}/{x}', {
+            attribution: 'Esri World Hydro Reference | Türkiye Mera Bilgi Sistemi',
+            maxZoom: 19
+        });
+
+        var provinceLayer = null;
+        var provinceGeoJSON = null;
+
+        function initMap() {
+            try {
+                map = L.map('map', {
+                    center: [39.0, 35.0],
+                    zoom: 6,
+                    zoomControl: false,
+                    layers: [cartoVoyager]
+                });
+
+                L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+                // İl sınırları katmanı için ayrı (mera poligonlarının altında) pane
+                map.createPane('provincePane');
+                map.getPane('provincePane').style.zIndex = 350;
+
+                markersGroup = L.layerGroup().addTo(map);
+                polygonsGroup = L.layerGroup().addTo(map);
+
+                connectQWebChannel();
+
+            } catch (err) {
+                console.error("Leaflet init error: ", err);
+            }
+        }
+
+        function connectQWebChannel() {
+            if (typeof qt !== 'undefined' && qt.webChannelTransport) {
+                new QWebChannel(qt.webChannelTransport, function (channel) {
+                    pyBridge = channel.objects.pyBridge;
+                    console.log("QWebChannel connected successfully!");
+                    if (pyBridge && pyBridge.onMapReady) {
+                        pyBridge.onMapReady();
+                    }
+                });
+            } else {
+                setTimeout(connectQWebChannel, 200);
+            }
+        }
+
+        function switchLayer(layerName) {
+            ['btnStreet', 'btnSatellite', 'btnHybrid', 'btnTopo'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el) el.classList.remove('active');
+            });
+
+            map.removeLayer(cartoVoyager);
+            map.removeLayer(esriSatellite);
+            map.removeLayer(hybridGroup);
+            map.removeLayer(osmMap);
+            map.removeLayer(topoMap);
+
+            var activeId = '';
+            if (layerName === 'street') {
+                map.addLayer(cartoVoyager);
+                activeId = 'btnStreet';
+            } else if (layerName === 'satellite') {
+                map.addLayer(esriSatellite);
+                activeId = 'btnSatellite';
+            } else if (layerName === 'hybrid') {
+                map.addLayer(hybridGroup);
+                activeId = 'btnHybrid';
+            } else if (layerName === 'topo') {
+                map.addLayer(topoMap);
+                activeId = 'btnTopo';
+            }
+            if (activeId) {
+                document.getElementById(activeId).classList.add('active');
+                // Kullanıcı seçimini yaptı → menü kapanır, harita tam görünür olur
+                closeMapMenu();
+            }
+        }
+
+        function resetView() {
+            map.setView([39.0, 35.0], 6);
+        }
+
+        var pistachioIcon = L.divIcon({
+            className: 'custom-pistachio-pin',
+            html: `<div style="background-color: #52B788; width: 20px; height: 20px; border-radius: 50%; border: 2px solid #081C15; box-shadow: 0 0 10px #52B788; cursor: pointer;"></div>`,
+            iconSize: [20, 20],
+            iconAnchor: [10, 10]
+        });
+
+        // ---- Popup yardimcilari: poligon alani + son olcum blogu ----
+        function fmtInt(n) { return Number(n || 0).toLocaleString('tr-TR'); }
+        function fmtNum(n) { return Number(n).toLocaleString('tr-TR', { maximumFractionDigits: 1 }); }
+
+        function polygonAreaHectares(coords) {
+            // [lat, lng] listesinden shoelace ile alan (hektar).
+            // Kure yaklasimi: y = lat*R (metre), x = lng*R*cos(lat0) — kucuk
+            // poligonlar icin dogru; kayitli alandan bagimsiz gercek geometri olcer.
+            if (!coords || coords.length < 3) return null;
+            try {
+                var R = 6371008.8;
+                var k = Math.PI / 180;
+                var lat0 = coords.reduce(function (s, c) { return s + c[0]; }, 0) / coords.length;
+                var cosLat0 = Math.max(0.05, Math.cos(lat0 * k));
+                var pts = coords.map(function (c) {
+                    return [c[0] * k * R, c[1] * k * R * cosLat0];
+                });
+                var s = 0;
+                for (var i = 0; i < pts.length; i++) {
+                    var j = (i + 1) % pts.length;
+                    s += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1];
+                }
+                var ha = Math.abs(s) / 2 / 10000;
+                return (isFinite(ha) && ha > 0) ? ha : null;
+            } catch (err) { return null; }
+        }
+
+        function polygonSummary(p) {
+            var ha = polygonAreaHectares(p.__polyCoords);
+            if (ha === null) {
+                return '<div class="pasture-popup-note">' + ui('popupNoPoly') + '</div>';
+            }
+            var kayit = Number(p.area_hectares || 0);
+            var uyari = (kayit > 0 && Math.abs(kayit - ha) / kayit > 0.25)
+                ? ' <span title="' + ui('popupArea') + ': ' + fmtInt(Math.round(kayit)) + ' ' + ui('popupHectare') + '">&#9888;&#65039;</span>'
+                : '';
+            return '<div class="pasture-popup-grid">' +
+                   '<span class="k">' + ui('popupPolyArea') + uyari + '</span>' +
+                   '<span class="v">' + fmtNum(Math.round(ha * 10) / 10) + ' ' + ui('popupHectare') + '</span>' +
+                   '</div>';
+        }
+
+        // ---- Popup: verim trendi sparkline (kuru ot kg/ha) ----
+        function yieldSparkline(p) {
+            var s = p.yield_history;
+            if (!s || s.length < 2) return '';
+            var nums = s.map(Number).filter(function (n) { return isFinite(n); });
+            if (nums.length < 2) return '';
+            var W = 92, H = 26, P = 2;
+            var min = Math.min.apply(null, nums);
+            var max = Math.max.apply(null, nums);
+            var span = (max - min) || 1;
+            var step = (W - 2 * P) / (nums.length - 1);
+            var pts = nums.map(function (v, i) {
+                var x = P + i * step;
+                var y = H - P - (v - min) / span * (H - 2 * P);
+                return [x, y];
+            });
+            var path = pts.map(function (pt, i) {
+                return (i === 0 ? 'M' : 'L') + pt[0].toFixed(1) + ',' + pt[1].toFixed(1);
+            }).join(' ');
+            var last = pts[pts.length - 1];
+            var first = nums[0];
+            var lastV = nums[nums.length - 1];
+            var pct = first > 0 ? ((lastV - first) / first * 100) : null;
+            var cls = 'flat', arrow = '\u2192';
+            if (pct !== null) {
+                if (pct > 5) { cls = 'up'; arrow = '\u2197'; }
+                else if (pct < -5) { cls = 'down'; arrow = '\u2198'; }
+            }
+            var tip = first.toLocaleString('tr-TR') + ' \u2192 ' +
+                      lastV.toLocaleString('tr-TR') + ' kg/ha';
+            var svg = '<svg width="' + W + '" height="' + H + '" role="img">' +
+                      '<path class="spark-line" d="' + path + '" fill="none" stroke-width="1.8" ' +
+                      'stroke-linecap="round" stroke-linejoin="round"/>' +
+                      '<circle class="spark-dot-last" cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="2.4"/>' +
+                      '</svg>';
+            return '<div class="pasture-popup-spark" title="' + ui('popupYieldTrend') + '">' + svg +
+                   '<span class="spark-arrow ' + cls + '">' + arrow + '</span>' +
+                   '<span title="' + tip + '">' + tip + '</span>' +
+                   '</div>';
+        }
+
+        function measurementSummary(p) {
+            var m = p.last_measurement;
+            if (!m || !m.m_date) {
+                return '<div class="pasture-popup-note">' + ui('popupNoMeas') + '</div>';
+            }
+            var cells = '<span class="k">' + ui('popupMeasDate') + '</span>' +
+                        '<span class="v">' + String(m.m_date) + '</span>';
+            if (m.dry_hay_yield_kg_per_ha !== null && m.dry_hay_yield_kg_per_ha !== undefined) {
+                cells += '<span class="k">' + ui('popupMeasYield') + '</span>' +
+                         '<span class="v">' + fmtNum(m.dry_hay_yield_kg_per_ha) + ' ' + ui('popupKgHa') + '</span>';
+            }
+            if (m.vegetation_coverage_pct !== null && m.vegetation_coverage_pct !== undefined) {
+                cells += '<span class="k">' + ui('popupMeasCover') + '</span>' +
+                         '<span class="v">%' + fmtNum(m.vegetation_coverage_pct) + '</span>';
+            }
+            if (m.avg_height_cm !== null && m.avg_height_cm !== undefined) {
+                cells += '<span class="k">' + ui('popupMeasHeight') + '</span>' +
+                         '<span class="v">' + fmtNum(m.avg_height_cm) + ' ' + ui('popupCm') + '</span>';
+            }
+            if (m.observer) {
+                cells += '<span class="k">' + ui('popupMeasObserver') + '</span>' +
+                         '<span class="v">' + String(m.observer) + '</span>';
+            }
+            return '<div class="pasture-popup-grid">' + cells + '</div>';
+        }
+
+        function loadPasturesOnMap(pasturesData) {
+            if (!map || !markersGroup || !polygonsGroup) return;
+
+            currentPasturesData = pasturesData;
+            markersGroup.clearLayers();
+            polygonsGroup.clearLayers();
+
+            pasturesData.forEach(function(p) {
+                var lat = p.lat;
+                var lng = p.lng;
+
+                // Poligon koordinatlarini erken coz (popup alan hesabi + cizim)
+                var polyCoords = null;
+                if (p.polygon_coords_json) {
+                    try {
+                        var parsed = JSON.parse(p.polygon_coords_json);
+                        if (parsed && parsed.length > 0) polyCoords = parsed;
+                    } catch (err) {
+                        console.error("Polygon parse error: ", err);
+                    }
+                }
+                p.__polyCoords = polyCoords;
+
+                // Marker
+                var marker = L.marker([lat, lng], { icon: pistachioIcon });
+
+                var fmt = function(n) { return Number(n || 0).toLocaleString('tr-TR'); };
+                var popupContent = `
+                    <div style="min-width: 220px;">
+                        <div class="pasture-popup-title">${p.name}</div>
+                        <span class="pasture-popup-badge">${p.city} / ${p.district} (${p.region})</span>
+                        <div class="pasture-popup-detail">
+                            <strong>${ui('popupCode')}:</strong> ${p.code}<br/>
+                            <strong>${ui('popupArea')}:</strong> ${fmt(p.area_hectares)} ${ui('popupHectare')}<br/>
+                            <strong>${ui('popupElevation')}:</strong> ${fmt(p.elevation_m)} m<br/>
+                            <strong>${ui('popupCapacity')}:</strong> ${fmt(p.bbhb_capacity)} BBHB | ${fmt(p.kbhb_capacity)} KBHB<br/>
+                            <strong>${ui('popupVegetation')}:</strong> %${p.vegetation_coverage_pct}<br/>
+                            <strong>${ui('popupStatus')}:</strong> ${p.status}
+                        </div>
+                        <div class="pasture-popup-section">
+                            <div class="pasture-popup-section-title">${ui('popupPolyArea')}</div>
+                            ${polygonSummary(p)}
+                        </div>
+                        <div class="pasture-popup-section">
+                            <div class="pasture-popup-section-title">${ui('popupLastMeas')}</div>
+                            ${measurementSummary(p)}
+                            ${yieldSparkline(p)}
+                        </div>
+                        <button class="btn-inspect" onclick="selectPasture(${p.id})">${ui('popupInspect')}</button>
+                        <button class="btn-addmeas" onclick="requestAddMeasurement(${p.id})">${ui('popupAddMeas')}</button>
+                    </div>
+                `;
+
+                marker.bindPopup(popupContent);
+                markersGroup.addLayer(marker);
+
+                // Polygon
+                if (polyCoords) {
+                    var polygon = L.polygon(polyCoords, {
+                        color: '#52B788',
+                        fillColor: '#74C69D',
+                        fillOpacity: 0.45,
+                        weight: 2
+                    });                    polygon.on('mouseover', function (e) {
+                        this.setStyle({ fillOpacity: 0.75, weight: 3, color: '#95D5B2' });
+                    });
+
+                    polygon.on('mouseout', function (e) {
+                        this.setStyle({ fillOpacity: 0.45, weight: 2, color: '#52B788' });
+                    });
+
+                    polygon.on('click', function (e) {
+                        selectPasture(p.id);
+                    });
+
+                    polygonsGroup.addLayer(polygon);
+                }
+            });
+        }
+
+        function selectPasture(pastureId) {
+            if (pyBridge && pyBridge.onPastureSelected) {
+                pyBridge.onPastureSelected(pastureId);
+            }
+        }
+
+        function requestAddMeasurement(pastureId) {
+            window.__addMeasRequest = pastureId;  // test/köprü izlenebilirliği
+            if (pyBridge && pyBridge.onAddMeasurementRequested) {
+                pyBridge.onAddMeasurementRequested(pastureId);
+            }
+        }
+
+        // Kayit sonrasi ayni meranin popup'ini yeniden acar (sureklilik)
+        function openPasturePopup(pastureId) {
+            if (!window.markersGroup || !window.markersGroup.getLayers) return false;
+            var layers = window.markersGroup.getLayers();
+            for (var i = 0; i < layers.length; i++) {
+                if (currentPasturesData && currentPasturesData[i]
+                        && currentPasturesData[i].id === pastureId) {
+                    layers[i].openPopup();
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        /* ---------- İl Sınırları Katmanı ---------- */
+        function setProvinceGeoJSON(geojson) {
+            provinceGeoJSON = geojson;
+            window.provinceFeatureCount = (geojson && geojson.features) ? geojson.features.length : 0;
+            if (map && provinceGeoJSON) {
+                buildProvinceLayer();
+            }
+        }
+
+        function styleProvince(feature) {
+            return {
+                color: '#2D6A4F',
+                weight: 1.6,
+                fillColor: '#52B788',
+                fillOpacity: 0.07
+            };
+        }
+
+        function onEachProvince(feature, layer) {
+            var ilAdi = feature.properties.name || 'Bilinmeyen İl';
+            layer.on('click', function (e) {
+                L.DomEvent.stopPropagation(e);
+                layer.bindPopup(
+                    '<div style="min-width:170px;">' +
+                    '<div class="pasture-popup-title">' + ilAdi + '</div>' +
+                    '<div class="pasture-popup-detail">' + ui('provincePopup') + '</div>' +
+                    '</div>'
+                ).openPopup();
+            });
+            layer.on('mouseover', function () {
+                this.setStyle({ fillOpacity: 0.22, weight: 2.4, color: '#95D5B2' });
+            });
+            layer.on('mouseout', function () {
+                if (provinceLayer) provinceLayer.resetStyle(this);
+            });
+        }
+
+        function buildProvinceLayer() {
+            if (provinceLayer) {
+                if (map.hasLayer(provinceLayer)) map.removeLayer(provinceLayer);
+                provinceLayer = null;
+            }
+            if (!provinceGeoJSON) return;
+            provinceLayer = L.geoJSON(provinceGeoJSON, {
+                pane: 'provincePane',
+                style: styleProvince,
+                onEachFeature: onEachProvince
+            });
+            var btn = document.getElementById('btnProvinces');
+            if (btn && btn.classList.contains('active')) {
+                map.addLayer(provinceLayer);
+            }
+            updateMenuBadge();
+        }
+
+        /* Menü düğmesindeki rozet: etkin overlay katman sayısını gösterir */
+        function updateMenuBadge() {
+            var badge = document.getElementById('menuBadge');
+            if (!badge) return;
+            var n = 0;
+            ['btnProvinces', 'btnSettlements', 'btnRivers'].forEach(function (id) {
+                var el = document.getElementById(id);
+                if (el && el.classList.contains('active')) n++;
+            });
+            badge.textContent = String(n);
+            badge.style.display = n > 0 ? '' : 'none';
+        }
+
+        /* Aktif durum değişince rozet güncellensin (temel harita + katmanlar) */
+        var _origSwitchLayerForBadge = switchLayer;
+        switchLayer = function (layerName) {
+            _origSwitchLayerForBadge(layerName);
+            updateMenuBadge();
+        };
+        var _origToggleProvinces = toggleProvinces;
+        toggleProvinces = function () {
+            _origToggleProvinces();
+            updateMenuBadge();
+        };
+        var _origToggleSettlements = toggleSettlements;
+        toggleSettlements = function () {
+            _origToggleSettlements();
+            updateMenuBadge();
+        };
+        var _origToggleRivers = toggleRivers;
+        toggleRivers = function () {
+            _origToggleRivers();
+            updateMenuBadge();
+        };
+
+        function toggleProvinces() {
+            var btn = document.getElementById('btnProvinces');
+            if (!provinceLayer) {
+                buildProvinceLayer();
+                if (!provinceLayer) return;
+            }
+            if (map.hasLayer(provinceLayer)) {
+                map.removeLayer(provinceLayer);
+                btn.classList.remove('active');
+            } else {
+                map.addLayer(provinceLayer);
+                btn.classList.add('active');
+            }
+            closeMapMenu();
+        }
+
+        function toggleSettlements() {
+            var btn = document.getElementById('btnSettlements');
+            if (map.hasLayer(settlementLabels)) {
+                map.removeLayer(settlementLabels);
+                btn.classList.remove('active');
+            } else {
+                map.addLayer(settlementLabels);
+                btn.classList.add('active');
+            }
+            closeMapMenu();
+        }
+
+        function toggleRivers() {
+            var btn = document.getElementById('btnRivers');
+            if (map.hasLayer(hydroOverlay)) {
+                map.removeLayer(hydroOverlay);
+                btn.classList.remove('active');
+            } else {
+                map.addLayer(hydroOverlay);
+                btn.classList.add('active');
+            }
+            closeMapMenu();
+        }
+
+        /* Nokta (lng,lat) çokgen içinde mi? (ray casting) */
+        function pointInRing(p, ring) {
+            var inside = false;
+            for (var i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+                var xi = ring[i][0], yi = ring[i][1];
+                var xj = ring[j][0], yj = ring[j][1];
+                var intersect = ((yi > p[1]) !== (yj > p[1])) &&
+                    (p[0] < (xj - xi) * (p[1] - yi) / (yj - yi) + xi);
+                if (intersect) inside = !inside;
+            }
+            return inside;
+        }
+
+        function pointInPolygon(point, geometry) {
+            var polys;
+            if (geometry.type === 'Polygon') polys = [geometry.coordinates];
+            else if (geometry.type === 'MultiPolygon') polys = geometry.coordinates;
+            else return false;
+            for (var i = 0; i < polys.length; i++) {
+                if (pointInRing(point, polys[i][0])) return true;
+            }
+            return false;
+        }
+
+        /* Seçilen mera konumunun bulunduğu ili kısa süre vurgula */
+        function flashProvince(lat, lng) {
+            if (!provinceLayer || !map) return;
+            var point = [lng, lat];
+            var target = null;
+            provinceLayer.eachLayer(function (layer) {
+                if (layer.feature && layer.feature.geometry &&
+                    pointInPolygon(point, layer.feature.geometry)) {
+                    target = layer;
+                }
+            });
+            if (target) {
+                target.setStyle({ fillOpacity: 0.32, weight: 3, color: '#F59E0B' });
+                if (map.hasLayer(provinceLayer)) target.bringToFront();
+                setTimeout(function () {
+                    // Katman kapalıyken bile stil sıfırlanır (tekrar açılınca sarı kalmasın)
+                    if (provinceLayer) provinceLayer.resetStyle(target);
+                }, 2500);
+            }
+        }
+
+        function focusPasture(lat, lng, zoomLevel) {
+            if (map) {
+                map.flyTo([lat, lng], zoomLevel || 12, { duration: 1.5 });
+                flashProvince(lat, lng);
+            }
+        }
+
+        window.onload = function() {
+            initMap();
+            updateMenuBadge();
+        };
+    </script>
+</body>
+</html>

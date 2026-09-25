@@ -1,0 +1,12 @@
+# MERA-BİS PRO — Python bağımlılıkları
+# Kurulum:  pip install -r requirements.txt
+# CI:       .github/workflows/release.yml bu dosyayı kullanır
+
+PyQt6==6.11.0
+PyQt6-Qt6==6.11.1
+PyQt6_sip==13.12.0
+PyQt6-WebEngine==6.11.0
+PyQt6-WebEngine-Qt6==6.11.1
+pyqtgraph==0.14.0
+matplotlib==3.11.1
+pyinstaller==6.21.0
